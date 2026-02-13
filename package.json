@@ -1,0 +1,27 @@
+{
+  "name": "reltype",
+  "version": "0.0.1",
+  "description": "Type-first relational modeling for PostgreSQL in TypeScript.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json --noEmit false",
+    "dev": "nodemon --exec ts-node src/_test/index.ts"
+  },
+  "author": "psh-suhyun",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "nodemon": "^3.1.11",
+    "pg": "^8.18.0",
+    "tspec": "^0.2.11",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=7.0.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.16.0"
+  }
+}
