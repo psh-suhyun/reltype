@@ -1,10 +1,14 @@
 {
-    "extends": "./tsconfig.json",
-    "exclude": [
-        "node_modules",
-        "build",
-        "**/_test/**",
-        "**/*.test.ts",
-        "**/*.spec.ts"
-    ]
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declarationMap": true,
+    "removeComments": false
+  },
+  "exclude": [
+    "node_modules",
+    "build",
+    "**/_test/**",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
 }

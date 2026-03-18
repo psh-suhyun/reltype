@@ -34,6 +34,6 @@ export interface DatabaseConfig {
     keepAlive?: boolean;
     keepAliveInitialDelayMillis?: number;
 
-    // 타입 설정 (커스텀 타입 파서)
-    types?: any;
+  // 타입 설정 (커스텀 타입 파서)
+  types?: Record<string, unknown>;
 }

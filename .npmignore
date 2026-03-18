@@ -69,3 +69,4 @@ certs/
 .editorconfig
 
 _test/
+/docs

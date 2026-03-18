@@ -1,27 +1,84 @@
 {
   "name": "reltype",
-  "version": "0.0.1",
-  "description": "Type-first relational modeling for PostgreSQL in TypeScript.",
-  "main": "dist/index.js",
+  "version": "0.1.0",
+  "description": "Type-first relational modeling for PostgreSQL in TypeScript. Fluent query builder with automatic camelCase ↔ snake_case conversion, CRUD, streaming, cursor pagination, and hooks.",
+
+  "main":  "dist/index.js",
+  "types": "dist/index.d.ts",
+
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "types":   "./dist/index.d.ts"
+    }
+  },
+
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+
   "scripts": {
-    "build": "tsc -p tsconfig.build.json --noEmit false",
-    "dev": "nodemon --exec ts-node src/_test/index.ts"
+    "build":          "tsc -p tsconfig.build.json --noEmit false",
+    "typecheck":      "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build",
+    "dev":            "nodemon --exec ts-node src/_test/index.ts"
   },
-  "author": "psh-suhyun",
+
+  "keywords": [
+    "postgresql",
+    "postgres",
+    "pg",
+    "orm",
+    "query-builder",
+    "typescript",
+    "type-safe",
+    "camelcase",
+    "snake-case",
+    "repository-pattern",
+    "crud",
+    "pagination",
+    "cursor-pagination",
+    "streaming",
+    "fluent",
+    "relational",
+    "database"
+  ],
+
+  "repository": {
+    "type": "git",
+    "url":  "https://github.com/psh-suhyun/reltype.git"
+  },
+  "bugs": {
+    "url": "https://github.com/psh-suhyun/reltype/issues"
+  },
+  "homepage": "https://github.com/psh-suhyun/reltype#readme",
+
+  "author":  "psh-suhyun",
   "license": "MIT",
-  "dependencies": {
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "nodemon": "^3.1.11",
-    "pg": "^8.18.0",
-    "tspec": "^0.2.11",
-    "typescript": "^5.9.3"
-  },
+
   "engines": {
     "node": ">=16.0.0",
-    "npm": ">=7.0.0"
+    "npm":  ">=7.0.0"
   },
+
+  "peerDependencies": {
+    "pg": ">=8.0.0"
+  },
+
+  "dependencies": {
+    "dotenv": "^17.3.1"
+  },
+
   "devDependencies": {
-    "@types/pg": "^8.16.0"
+    "@types/express": "^4.17.25",
+    "@types/pg":      "^8.16.0",
+    "express":        "^5.2.1",
+    "nodemon":        "^3.1.11",
+    "pg":             "^8.18.0",
+    "tspec":          "^0.2.11",
+    "typescript":     "^5.9.3"
   }
 }
