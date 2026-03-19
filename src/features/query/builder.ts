@@ -185,8 +185,12 @@ export class QueryBuilder<T extends Record<string, unknown>> {
 
   /**
    * JOIN 추가 (여러 번 호출 가능)
+   *
    * @example
    * .join({ table: 'orders', on: 'users.id = orders.user_id', type: 'LEFT' })
+   *
+   * @security `on` 절은 애플리케이션 코드에서 정적으로 구성해야 합니다.
+   *           사용자 입력을 직접 전달하면 SQL Injection 위험이 있습니다.
    */
   join(j: JoinClause): this {
     this._joins.push(j);
@@ -204,6 +208,7 @@ export class QueryBuilder<T extends Record<string, unknown>> {
 
   /**
    * 쿼리 실행 라이프사이클 훅을 등록합니다.
+   * 전역 훅(`useHooks`)이 설정되어 있으면 per-query 훅이 우선합니다.
    *
    * @example
    * ```ts
@@ -234,16 +239,11 @@ export class QueryBuilder<T extends Record<string, unknown>> {
 
   /**
    * 첫 번째 row 하나를 반환합니다. 없으면 null입니다.
+   * 내부적으로 clone()을 사용하여 원본 builder 상태를 변경하지 않습니다.
    */
   async one(): Promise<T | null> {
-    const saved = this._limitVal;
-    this._limitVal = 1;
-    try {
-      const rows = await this.exec();
-      return rows[0] ?? null;
-    } finally {
-      this._limitVal = saved;
-    }
+    const rows = await this.clone().limit(1).exec();
+    return rows[0] ?? null;
   }
 
   /**
@@ -281,7 +281,7 @@ export class QueryBuilder<T extends Record<string, unknown>> {
 
   /**
    * OFFSET 기반 페이지네이션.
-   * COUNT + DATA 쿼리를 병렬로 실행합니다.
+   * COUNT + DATA 쿼리를 같은 트랜잭션 안에서 순차 실행합니다.
    *
    * > 수백만 건 이상의 테이블에서는 `cursorPaginate()`를 사용하세요.
    *
@@ -305,11 +305,10 @@ export class QueryBuilder<T extends Record<string, unknown>> {
       joinSQL, whereSQL, groupSQL,
     ].filter(Boolean).join(' ');
 
-    const dataParams = [...whereParams];
-    dataParams.push(pageSize);
-    const limitIdx  = dataParams.length;
-    dataParams.push((page - 1) * pageSize);
-    const offsetIdx = dataParams.length;
+    // LIMIT/OFFSET 파라미터를 whereParams 뒤에 이어붙임
+    const dataParams = [...whereParams, pageSize, (page - 1) * pageSize];
+    const limitIdx   = whereParams.length + 1;
+    const offsetIdx  = whereParams.length + 2;
 
     const dataSql = [
       `SELECT ${this._cols} FROM ${this._table}`,
@@ -318,28 +317,30 @@ export class QueryBuilder<T extends Record<string, unknown>> {
     ].filter(Boolean).join(' ');
 
     try {
+      // 같은 클라이언트로 순차 실행하여 커넥션 절약
       return await withClient(async (client) => {
         if (this._execHooks?.beforeExec) {
           await this._execHooks.beforeExec({ sql: dataSql, params: dataParams });
         }
 
         const start = Date.now();
-        logger.debug(`COUNT SQL: ${countSql}`, whereParams);
-        logger.debug(`DATA  SQL: ${dataSql}`, dataParams);
+        logger.debug(`PAGINATE COUNT SQL: ${countSql}`, whereParams);
+        logger.debug(`PAGINATE DATA  SQL: ${dataSql}`, dataParams);
 
-        const [countResult, dataResult] = await Promise.all([
-          client.query(countSql, whereParams),
-          client.query(dataSql, dataParams),
-        ]);
+        const countResult = await client.query(countSql, whereParams);
+        const dataResult  = await client.query(dataSql, dataParams);
 
         const total = parseInt(
           String((countResult.rows[0] as Record<string, unknown>).count ?? '0'),
           10,
         );
         const data = mapRows<T>(dataResult.rows as Record<string, unknown>[]);
+        const elapsed = Date.now() - start;
+
+        logger.debug(`PAGINATE 완료 (${elapsed}ms) total=${total}`);
 
         if (this._execHooks?.afterExec) {
-          await this._execHooks.afterExec({ rows: data, elapsed: Date.now() - start, sql: dataSql });
+          await this._execHooks.afterExec({ rows: data, elapsed, sql: dataSql });
         }
 
         return {
@@ -386,17 +387,19 @@ export class QueryBuilder<T extends Record<string, unknown>> {
     const { pageSize, cursor, cursorColumn, direction = 'asc' } = opts;
     const colSnake = toSnake(cursorColumn);
 
-    // 커서 값 디코딩
     let cursorValue: unknown | undefined;
     if (cursor) {
       try {
         cursorValue = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
       } catch {
-        throw new Error(`유효하지 않은 cursor 값입니다: ${cursor}`);
+        logger.error(
+          `cursorPaginate [${this._table}]: 유효하지 않은 cursor 토큰입니다. 이전 페이지 응답의 nextCursor 값을 그대로 사용하세요.`,
+        );
+        return { data: [], nextCursor: null, pageSize, hasNext: false };
       }
     }
 
-    // 기존 조건에 커서 조건 추가 (원본 builder를 변경하지 않음)
+    // 원본 builder를 변경하지 않고 clone으로 처리
     const qb = this.clone();
     if (cursorValue !== undefined) {
       qb._andConds.push({
@@ -410,14 +413,13 @@ export class QueryBuilder<T extends Record<string, unknown>> {
     qb._orderByClauses = [{ col: colSnake, dir: direction === 'asc' ? 'ASC' : 'DESC' }];
     qb._limitVal       = pageSize + 1;
 
-    const rows = await qb.exec();
+    const rows    = await qb.exec();
     const hasNext = rows.length > pageSize;
     const data    = hasNext ? rows.slice(0, pageSize) : rows;
 
-    // 다음 커서 인코딩 (마지막 row의 cursorColumn 값)
     let nextCursor: string | null = null;
     if (hasNext && data.length > 0) {
-      const lastRow  = data[data.length - 1];
+      const lastRow   = data[data.length - 1];
       const cursorVal = lastRow[cursorColumn as keyof T];
       nextCursor = Buffer.from(JSON.stringify(cursorVal)).toString('base64url');
     }
@@ -430,7 +432,7 @@ export class QueryBuilder<T extends Record<string, unknown>> {
    *
    * 대용량 테이블의 일괄 처리(ETL, 이메일 발송, 마이그레이션 등)에 적합합니다.
    *
-   * @param fn        - 배치 배열을 받아 처리하는 비동기 함수
+   * @param fn             - 배치 배열을 받아 처리하는 비동기 함수
    * @param opts.batchSize - 한 번에 처리할 row 수 (기본값: 500)
    *
    * @example
@@ -583,19 +585,20 @@ export class QueryBuilder<T extends Record<string, unknown>> {
 
   /**
    * builder 상태를 독립적으로 복사합니다.
-   * stream/forEach 내부에서 LIMIT/OFFSET을 덮어쓸 때 원본을 보호하기 위해 사용합니다.
+   * `one()`, `cursorPaginate()`, `stream()`, `forEach()` 내부에서
+   * LIMIT/OFFSET 등 상태를 임시 변경할 때 원본을 보호하기 위해 사용합니다.
    */
   clone(): QueryBuilder<T> {
     const c = new QueryBuilder<T>(this._table);
-    c._andConds        = [...this._andConds];
-    c._orConds         = [...this._orConds];
-    c._orderByClauses  = [...this._orderByClauses];
-    c._limitVal        = this._limitVal;
-    c._offsetVal       = this._offsetVal;
-    c._groupByCols     = [...this._groupByCols];
-    c._joins           = [...this._joins];
-    c._cols            = this._cols;
-    c._execHooks       = this._execHooks;
+    c._andConds       = [...this._andConds];
+    c._orConds        = [...this._orConds];
+    c._orderByClauses = [...this._orderByClauses];
+    c._limitVal       = this._limitVal;
+    c._offsetVal      = this._offsetVal;
+    c._groupByCols    = [...this._groupByCols];
+    c._joins          = [...this._joins];
+    c._cols           = this._cols;
+    c._execHooks      = this._execHooks;
     return c;
   }
 
@@ -619,15 +622,15 @@ export class QueryBuilder<T extends Record<string, unknown>> {
   private buildWhereParts(): { whereSQL: string; params: unknown[] } {
     const params: unknown[] = [];
     const andParts = this._andConds.map((c) => renderCond(c, params));
-    const orParts  = this._orConds.map((c) => renderCond(c, params));
+    const orParts  = this._orConds.map((c)  => renderCond(c, params));
 
     const andSQL = andParts.join(' AND ');
     const orSQL  = orParts.join(' OR ');
 
     let whereSQL = '';
-    if (andSQL && orSQL)    whereSQL = `WHERE (${andSQL}) OR (${orSQL})`;
-    else if (andSQL)        whereSQL = `WHERE ${andSQL}`;
-    else if (orSQL)         whereSQL = `WHERE ${orSQL}`;
+    if (andSQL && orSQL)  whereSQL = `WHERE (${andSQL}) OR (${orSQL})`;
+    else if (andSQL)      whereSQL = `WHERE ${andSQL}`;
+    else if (orSQL)       whereSQL = `WHERE ${orSQL}`;
 
     return { whereSQL, params };
   }

@@ -23,10 +23,21 @@ const logger = Logger.fromEnv(
   { prefix: '[Repo]' },
 );
 
-/** 런타임에서 primary key의 camelCase 키를 찾습니다. */
-function findPkKey(cols: Cols): string {
+/**
+ * 런타임에서 primary key의 camelCase 키를 찾습니다.
+ * primary key가 없으면 경고를 출력하고 'id'를 기본값으로 사용합니다.
+ */
+function findPkKey(cols: Cols, tableName: string): string {
   const entry = Object.entries(cols).find(([, c]) => c.isPrimary);
-  return entry ? entry[0] : 'id';
+  if (!entry) {
+    logger.warn(
+      `[Repo] '${tableName}' 테이블에 primary key가 정의되지 않았습니다. ` +
+      `findById, delete 등에서 'id' 컬럼을 기본값으로 사용합니다. ` +
+      `col.xxx().primaryKey() 로 명시적으로 지정하세요.`,
+    );
+    return 'id';
+  }
+  return entry[0];
 }
 
 /**
@@ -46,9 +57,8 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
   private _globalHooks?: ExecHooks<InferRow<TDef>>;
 
   constructor(protected readonly def: TDef) {
-    // qualifiedName이 있으면 사용 ("schema"."table"), 없으면 name 사용
     this.tableName = def.qualifiedName ?? def.name;
-    this.pkKey     = findPkKey(def.cols);
+    this.pkKey     = findPkKey(def.cols, this.tableName);
     this.pkCol     = toSnake(this.pkKey);
   }
 
@@ -78,6 +88,11 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
     built: BuiltQuery,
     client?: PoolClient,
   ): Promise<T[]> {
+    if (!built.sql) {
+      logger.error(`[${this.tableName}] 빈 SQL이 전달되었습니다. 실행을 건너뜁니다.`);
+      return [];
+    }
+
     const run = async (c: PoolClient): Promise<T[]> => {
       const start = Date.now();
       logger.debug(`SQL: ${built.sql}`, built.params);
@@ -166,28 +181,17 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
     }
   }
 
+  /**
+   * ID로 단건 삭제합니다.
+   * `exec()`를 재사용하여 로깅과 에러 처리를 일관성 있게 처리합니다.
+   */
   async delete(id: number | string): Promise<boolean> {
     try {
       const where = { [this.pkKey]: id } as Partial<InferRow<TDef>>;
-      const built = buildDelete(this.tableName, where);
-
-      return await withClient(async (client) => {
-        const start = Date.now();
-        logger.debug(`SQL: ${built.sql}`, built.params);
-
-        try {
-          const result = await client.query(built.sql, built.params as unknown[]);
-          logger.debug(`완료 (${Date.now() - start}ms)`);
-          return (result.rowCount ?? 0) > 0;
-        } catch (err) {
-          const dbErr = DbError.from(err);
-          logger.error(`삭제 실패 [${this.tableName}]`, {
-            ...dbErr.toLogContext(),
-            elapsed: `${Date.now() - start}ms`,
-          });
-          throw dbErr;
-        }
-      });
+      const rows  = await this.exec<InferRow<TDef>>(
+        buildDelete(this.tableName, where),
+      );
+      return rows.length > 0;
     } catch (err) {
       throw DbError.from(err);
     }
@@ -217,6 +221,8 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
 
   /**
    * 여러 row를 단일 INSERT 쿼리로 삽입합니다.
+   *
+   * @throws rows가 빈 배열이면 Error를 던집니다.
    */
   async bulkCreate(rows: InferInsert<TDef>[]): Promise<InferRow<TDef>[]> {
     try {
@@ -235,28 +241,16 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
 
   /**
    * 유연한 플루언트 쿼리 빌더를 반환합니다.
-   *
-   * WHERE, OR, ORDER BY, GROUP BY, JOIN, LIMIT, OFFSET, paginate, calculate 등을
-   * 메서드 체인으로 조합할 수 있습니다.
+   * 전역 훅(`useHooks`)이 설정된 경우 빌더에 자동으로 주입됩니다.
    *
    * @example
    * ```ts
-   * // 기본 조회 (await 직접 사용 가능)
    * const users = await repo.select({ isActive: true })
    *   .orderBy([{ column: 'createdAt', direction: 'DESC' }])
    *   .limit(20);
    *
-   * // OR 조건
-   * const results = await repo.select()
-   *   .or({ email: { operator: 'LIKE', value: '%@gmail.com' } });
-   *
-   * // 페이지네이션
    * const page = await repo.select()
    *   .paginate({ page: 1, pageSize: 20 });
-   *
-   * // 집계
-   * const agg = await repo.select({ isActive: true })
-   *   .calculate([{ fn: 'COUNT', alias: 'count' }]);
    * ```
    */
   select(where?: AdvancedWhere<InferRow<TDef>>): QueryBuilder<InferRow<TDef>> {
@@ -267,17 +261,19 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
 
   /**
    * 단건 조회 (없으면 null). `select(where).one()` 의 단축형입니다.
+   * 전역 훅이 적용됩니다.
    *
    * @example
    * ```ts
    * const user = await repo.selectOne({ id: 1 });
+   * const user = await repo.selectOne({ email: 'foo@bar.com' });
    * ```
    */
   async selectOne(
     where: AdvancedWhere<InferRow<TDef>>,
   ): Promise<InferRow<TDef> | null> {
     try {
-      return await new QueryBuilder<InferRow<TDef>>(this.tableName, where).one();
+      return await this.select(where).one();
     } catch (err) {
       throw DbError.from(err);
     }

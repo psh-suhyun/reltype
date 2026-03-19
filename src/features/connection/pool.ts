@@ -10,13 +10,20 @@ const logger = Logger.fromEnv(
 
 /** Pool 상태 스냅샷 */
 export interface PoolStatus {
+  /** Pool이 초기화되어 있는지 여부 */
+  isInitialized: boolean;
   /** 총 생성된 연결 수 */
   totalCount: number;
   /** 현재 유휴 연결 수 */
   idleCount: number;
   /** 연결 대기 중인 요청 수 */
   waitingCount: number;
-  /** Pool이 정상 상태인지 여부 */
+  /**
+   * Pool이 정상 상태인지 여부.
+   * - `isInitialized === false` → false
+   * - `waitingCount > 0 && idleCount === 0` → false (pool 소진)
+   * - 그 외 → true
+   */
   isHealthy: boolean;
 }
 
@@ -121,7 +128,13 @@ export async function withClient<T>(
  */
 export function getPoolStatus(): PoolStatus {
   if (!_pool) {
-    return { totalCount: 0, idleCount: 0, waitingCount: 0, isHealthy: true };
+    return {
+      isInitialized: false,
+      totalCount:    0,
+      idleCount:     0,
+      waitingCount:  0,
+      isHealthy:     false,
+    };
   }
   return readPoolStatus(_pool);
 }
@@ -153,10 +166,13 @@ export async function closePool(): Promise<void> {
 }
 
 function readPoolStatus(pool: Pool): PoolStatus {
+  const { totalCount, idleCount, waitingCount } = pool;
   return {
-    totalCount:   pool.totalCount,
-    idleCount:    pool.idleCount,
-    waitingCount: pool.waitingCount,
-    isHealthy:    pool.idleCount > 0 || pool.waitingCount === 0,
+    isInitialized: true,
+    totalCount,
+    idleCount,
+    waitingCount,
+    // pool이 소진된 경우(대기 요청이 있는데 유휴 연결이 없음)에만 unhealthy
+    isHealthy: !(waitingCount > 0 && idleCount === 0),
   };
 }
