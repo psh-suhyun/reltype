@@ -9,9 +9,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [0.1.5] — 2026-03-19
 
 ### Changed
-- `README.md` — 전체 문서 최신 API 기준으로 업데이트
-- `README.ko.md` — 한국어 문서 최신 API 기준으로 업데이트
-- `CHANGELOG.md` — 0.1.1 ~ 0.1.4 릴리즈 내역 소급 작성
+- `README.md` — 프로젝트 소개 전면 개편, Prisma/TypeORM/Drizzle 비교표 추가, FAQ 및 사용 시나리오 보강, 대용량/에러처리/풀 설정 가이드 상세화
+- `README.ko.md` — 한국어 문서 동일 수준으로 전면 개편 (비교표, FAQ, 운영 가이드 포함)
+- `CHANGELOG.md` — 0.1.1 ~ 0.1.4 릴리즈 내역 소급 작성 및 설명 보강
 
 ---
 
