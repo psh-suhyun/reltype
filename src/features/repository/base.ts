@@ -24,6 +24,30 @@ const logger = Logger.fromEnv(
 );
 
 /**
+ * `BaseRepo` 생성자 옵션.
+ *
+ * @example
+ * ```ts
+ * // 생성 시 debug 활성화
+ * const userRepo = new UserRepo(usersTable, { debug: true });
+ *
+ * // 런타임 토글
+ * userRepo.debugMode(true);   // 활성화
+ * userRepo.debugMode(false);  // 비활성화
+ * ```
+ */
+export interface RepoOpts {
+  /**
+   * `true` 로 설정하면 이 레포지토리의 모든 SQL 실행 내용을 콘솔에 강제 출력합니다.
+   *
+   * - `LOG_LEVEL` 환경변수 설정과 무관하게 항상 출력됩니다.
+   * - 출력 내용: SQL 쿼리, 파라미터, 실행 시간, 반환 row 수
+   * - 개발·디버깅 목적으로만 사용하세요. 프로덕션에서는 `false` 유지를 권장합니다.
+   */
+  debug?: boolean;
+}
+
+/**
  * 런타임에서 primary key의 camelCase 키를 찾습니다.
  * primary key가 없으면 경고를 출력하고 'id'를 기본값으로 사용합니다.
  */
@@ -55,11 +79,23 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
   protected readonly pkCol: string;
 
   private _globalHooks?: ExecHooks<InferRow<TDef>>;
+  private _debugMode: boolean;
 
-  constructor(protected readonly def: TDef) {
-    this.tableName = def.qualifiedName ?? def.name;
-    this.pkKey     = findPkKey(def.cols, this.tableName);
-    this.pkCol     = toSnake(this.pkKey);
+  /** debug 전용 Logger — LOG_LEVEL 환경변수와 무관하게 항상 출력 */
+  private readonly _debugLogger: Logger;
+
+  constructor(protected readonly def: TDef, opts?: RepoOpts) {
+    this.tableName  = def.qualifiedName ?? def.name;
+    this.pkKey      = findPkKey(def.cols, this.tableName);
+    this.pkCol      = toSnake(this.pkKey);
+    this._debugMode = opts?.debug ?? false;
+    this._debugLogger = new Logger({
+      enabled:         true,
+      level:           'debug',
+      format:          'text',
+      enableTimestamp: false,
+      prefix:          `[SQL ${this.tableName}]`,
+    });
   }
 
   /**
@@ -79,6 +115,29 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
   }
 
   /**
+   * 쿼리 디버그 모드를 런타임에 토글합니다.
+   * `true` 이면 이 레포지토리의 모든 SQL 실행 내용을 콘솔에 강제 출력합니다.
+   *
+   * @example
+   * ```ts
+   * userRepo.debugMode(true);  // 활성화
+   * userRepo.debugMode(false); // 비활성화
+   * userRepo.debugMode();      // 인수 생략 시 true (toggle-on)
+   * ```
+   */
+  debugMode(enabled: boolean = true): this {
+    this._debugMode = enabled;
+    return this;
+  }
+
+  /**
+   * 현재 debug 모드 활성화 여부를 반환합니다.
+   */
+  get isDebugMode(): boolean {
+    return this._debugMode;
+  }
+
+  /**
    * SQL을 실행하고 camelCase 변환된 rows를 반환합니다.
    *
    * - 에러 발생 시 `DbError`로 변환 후 로깅하고 re-throw합니다.
@@ -95,11 +154,27 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
 
     const run = async (c: PoolClient): Promise<T[]> => {
       const start = Date.now();
-      logger.debug(`SQL: ${built.sql}`, built.params);
+
+      if (this._debugMode) {
+        this._debugLogger.debug(`SQL:    ${built.sql}`);
+        if (built.params.length > 0) {
+          this._debugLogger.debug('Params:', built.params);
+        }
+      } else {
+        logger.debug(`SQL: ${built.sql}`, built.params);
+      }
 
       try {
-        const result = await c.query(built.sql, built.params as unknown[]);
-        logger.debug(`완료 (${Date.now() - start}ms) rowCount=${result.rowCount ?? 0}`);
+        const result  = await c.query(built.sql, built.params as unknown[]);
+        const elapsed = Date.now() - start;
+        const count   = result.rowCount ?? 0;
+
+        if (this._debugMode) {
+          this._debugLogger.debug(`→ ${count} rows in ${elapsed}ms`);
+        } else {
+          logger.debug(`완료 (${elapsed}ms) rowCount=${count}`);
+        }
+
         return mapRows<T>(result.rows as Record<string, unknown>[]);
       } catch (err) {
         const dbErr = DbError.from(err);
@@ -255,8 +330,35 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
    */
   select(where?: AdvancedWhere<InferRow<TDef>>): QueryBuilder<InferRow<TDef>> {
     const qb = new QueryBuilder<InferRow<TDef>>(this.tableName, where);
-    if (this._globalHooks) qb.hooks(this._globalHooks);
+    const composedHooks = this.buildSelectHooks();
+    if (composedHooks) qb.hooks(composedHooks);
     return qb;
+  }
+
+  /**
+   * debug 훅과 전역 훅을 합성합니다.
+   * - debugMode ON:  debug 출력 → _globalHooks 순서로 실행
+   * - debugMode OFF: _globalHooks 만 실행
+   */
+  private buildSelectHooks(): ExecHooks<InferRow<TDef>> | undefined {
+    if (!this._debugMode && !this._globalHooks) return undefined;
+    if (!this._debugMode) return this._globalHooks;
+
+    const dl = this._debugLogger;
+    const g  = this._globalHooks;
+
+    return {
+      beforeExec: async (ctx) => {
+        dl.debug(`SQL:    ${ctx.sql}`);
+        if (ctx.params.length > 0) dl.debug('Params:', ctx.params);
+        await g?.beforeExec?.(ctx);
+      },
+      afterExec: async (ctx) => {
+        dl.debug(`→ ${ctx.rows.length} rows in ${ctx.elapsed}ms`);
+        await g?.afterExec?.(ctx);
+      },
+      onError: g?.onError,
+    };
   }
 
   /**

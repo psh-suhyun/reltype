@@ -9,6 +9,7 @@ export type { InferRow, InferInsert, InferUpdate } from './features/schema/inter
 // ── Repository ───────────────────────────────────────────────────────────────
 export { createRepo }        from './features/repository/create';
 export { BaseRepo }          from './features/repository/base';
+export type { RepoOpts }     from './features/repository/base';
 export type { IRepo }        from './features/repository/interfaces/Repo';
 export type { FindOpts }     from './features/repository/interfaces/Find';
 

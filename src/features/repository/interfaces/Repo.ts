@@ -33,4 +33,8 @@ export interface IRepo<
   raw<R extends Record<string, unknown>>(sql: string, params?: unknown[]): Promise<R[]>;
   /** 이 레포지토리의 모든 select() 빌더에 적용될 글로벌 훅 등록 */
   useHooks(h: ExecHooks<TRow>): this;
+  /** 런타임 쿼리 디버그 모드 토글 */
+  debugMode(enabled?: boolean): this;
+  /** 현재 debug 모드 활성화 여부 */
+  readonly isDebugMode: boolean;
 }

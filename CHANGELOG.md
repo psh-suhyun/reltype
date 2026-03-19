@@ -6,6 +6,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.1.7] — 2026-03-19
+
+### Added — Repository Query Debug
+
+- `BaseRepo`에 `RepoOpts` 및 쿼리 디버그 모드 추가
+  - `new UserRepo(usersTable, { debug: true })` 형태로 생성 시, 이 레포지토리에서 실행되는 **모든 SQL / Params / 실행 시간**이 콘솔에 출력됩니다.
+  - `userRepo.debugMode(true | false)` 로 런타임에서도 토글 가능, `userRepo.isDebugMode` 로 현재 상태 조회 가능
+  - `LOG_LEVEL` 환경 변수와 무관하게 항상 출력되며, 프로덕션에서는 `debug: false` 유지 권장
+- `select()` 계열은 QueryBuilder 훅(`ExecHooks`)과 자동 합성되어, debug 로그 → 사용자 정의 훅 순서로 실행되도록 개선
+
+---
+
 ## [0.1.6] — 2026-03-19
 
 ### Security — SQL Injection 전면 차단
