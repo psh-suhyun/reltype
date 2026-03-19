@@ -1,6 +1,7 @@
 // ── Schema ──────────────────────────────────────────────────────────────────
 export { col, Col }          from './features/schema/column';
 export { defineTable }       from './features/schema/table';
+export type { TableOpts }    from './features/schema/table';
 export type { ColShape }     from './features/schema/interfaces/Column';
 export type { TableDef, Cols } from './features/schema/interfaces/Table';
 export type { InferRow, InferInsert, InferUpdate } from './features/schema/interfaces/Infer';

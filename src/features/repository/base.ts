@@ -46,7 +46,8 @@ export class BaseRepo<TDef extends TableDef<string, Cols>>
   private _globalHooks?: ExecHooks<InferRow<TDef>>;
 
   constructor(protected readonly def: TDef) {
-    this.tableName = def.name;
+    // qualifiedName이 있으면 사용 ("schema"."table"), 없으면 name 사용
+    this.tableName = def.qualifiedName ?? def.name;
     this.pkKey     = findPkKey(def.cols);
     this.pkCol     = toSnake(this.pkKey);
   }
