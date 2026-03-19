@@ -1,4 +1,5 @@
 import { toSnake } from '../transform/case';
+import { quoteIdentifier } from '../../utils/sqlGuard';
 import { buildWhere } from './where';
 import { BuiltQuery } from './interfaces/Query';
 import { WhereInput } from './interfaces/Where';
@@ -12,6 +13,7 @@ const logger = Logger.fromEnv(
 /**
  * UPDATE 쿼리를 생성합니다. RETURNING * 으로 수정된 row를 반환합니다.
  * camelCase key → snake_case 컬럼명으로 자동 변환됩니다.
+ * 모든 컬럼명은 `quoteIdentifier`로 검증 및 이스케이프됩니다.
  *
  * 수정할 데이터가 없거나 WHERE 조건이 없으면 빈 쿼리를 반환합니다 (실행 시 no-op).
  */
@@ -36,7 +38,7 @@ export function buildUpdate<T extends Record<string, unknown>>(
   const params: unknown[] = [];
   const setClauses = entries.map(([k, v]) => {
     params.push(v);
-    return `${toSnake(k)} = $${params.length}`;
+    return `${quoteIdentifier(toSnake(k))} = $${params.length}`;
   });
 
   const { sql: whereSql, params: whereParams } = buildWhere(where, params.length + 1);

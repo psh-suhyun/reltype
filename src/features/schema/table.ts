@@ -1,4 +1,5 @@
 import { TableDef, Cols } from './interfaces/Table';
+import { escapeSchemaIdentifier } from '../../utils/sqlGuard';
 
 export interface TableOpts {
   /**
@@ -61,9 +62,10 @@ export function defineTable<TName extends string, TCols extends Cols>(
   }
 
   // 쌍따옴표로 식별자 이스케이프 (예약어·대소문자 안전)
+  // 내부의 " 문자는 "" 로 이중 이스케이프합니다 (PostgreSQL 표준).
   const qualifiedName = resolvedSchema
-    ? `"${resolvedSchema}"."${resolvedName}"`
-    : `"${resolvedName}"`;
+    ? `${escapeSchemaIdentifier(resolvedSchema)}.${escapeSchemaIdentifier(resolvedName)}`
+    : escapeSchemaIdentifier(resolvedName);
 
   return {
     name:          resolvedName,

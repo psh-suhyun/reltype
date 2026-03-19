@@ -1,4 +1,5 @@
 import { toSnake } from '../transform/case';
+import { quoteIdentifier, validateOrderDir } from '../../utils/sqlGuard';
 import { buildWhere } from './where';
 import { BuiltQuery } from './interfaces/Query';
 import { WhereInput } from './interfaces/Where';
@@ -13,7 +14,7 @@ export interface SelectOpts<T extends Record<string, unknown>> {
 
 /**
  * SELECT 쿼리를 생성합니다.
- * 모든 WHERE 조건은 camelCase → snake_case 자동 변환됩니다.
+ * camelCase → snake_case 자동 변환 및 `quoteIdentifier` 검증이 적용됩니다.
  */
 export function buildSelect<T extends Record<string, unknown>>(
   table: string,
@@ -31,9 +32,11 @@ export function buildSelect<T extends Record<string, unknown>>(
   }
 
   if (opts.orderBy && opts.orderBy.length > 0) {
-    const clauses = opts.orderBy.map(({ col, dir }) =>
-      `${toSnake(String(col))} ${dir ?? 'ASC'}`,
-    );
+    const clauses = opts.orderBy.map(({ col, dir }) => {
+      const safeCol = quoteIdentifier(toSnake(String(col)));
+      const safeDir = validateOrderDir(dir ?? 'ASC');
+      return `${safeCol} ${safeDir}`;
+    });
     parts.push(`ORDER BY ${clauses.join(', ')}`);
   }
 

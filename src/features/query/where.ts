@@ -1,10 +1,12 @@
 import { toSnake } from '../transform/case';
+import { quoteIdentifier } from '../../utils/sqlGuard';
 import { BuiltQuery } from './interfaces/Query';
 import { WhereInput } from './interfaces/Where';
 
 /**
  * WhereInput 객체로부터 WHERE 절 SQL과 params를 생성합니다.
  * camelCase key → snake_case 컬럼명으로 자동 변환됩니다.
+ * 모든 컬럼명은 `quoteIdentifier`로 검증 및 이스케이프됩니다.
  *
  * @param where     - camelCase key 기반 조건 객체
  * @param startIdx  - param placeholder 시작 번호 ($1, $2 ...)
@@ -23,7 +25,7 @@ export function buildWhere<T extends Record<string, unknown>>(
   const conditions: string[] = [];
 
   for (const [key, val] of entries) {
-    const col = toSnake(key);
+    const col = quoteIdentifier(toSnake(key));
     if (val === null) {
       conditions.push(`${col} IS NULL`);
     } else {

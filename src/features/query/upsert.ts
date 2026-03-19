@@ -1,4 +1,5 @@
 import { toSnake } from '../transform/case';
+import { quoteIdentifier } from '../../utils/sqlGuard';
 import { BuiltQuery } from './interfaces/Query';
 import { Logger } from '../../utils/logger';
 
@@ -10,6 +11,7 @@ const logger = Logger.fromEnv(
 /**
  * INSERT ... ON CONFLICT DO UPDATE 쿼리를 생성합니다.
  * 충돌 컬럼을 제외한 나머지 컬럼을 EXCLUDED 값으로 업데이트합니다.
+ * 모든 컬럼명은 `quoteIdentifier`로 검증 및 이스케이프됩니다.
  *
  * @param table       - 테이블명
  * @param data        - 삽입할 데이터 (camelCase key)
@@ -29,21 +31,25 @@ export function buildUpsert(
     return { sql: '', params: [] };
   }
 
-  const cols         = entries.map(([k]) => toSnake(k)).join(', ');
-  const placeholders = entries.map((_, i) => `$${i + 1}`).join(', ');
-  const params       = entries.map(([, v]) => v);
+  const quotedConflictCol = quoteIdentifier(conflictCol);
+  const snakeCols         = entries.map(([k]) => toSnake(k));
+  const cols              = snakeCols.map(quoteIdentifier).join(', ');
+  const placeholders      = entries.map((_, i) => `$${i + 1}`).join(', ');
+  const params            = entries.map(([, v]) => v);
 
-  const updateSet = entries
-    .map(([k]) => toSnake(k))
+  const updateSet = snakeCols
     .filter((col) => col !== conflictCol)
-    .map((col) => `${col} = EXCLUDED.${col}`)
+    .map((col) => {
+      const q = quoteIdentifier(col);
+      return `${q} = EXCLUDED.${q}`;
+    })
     .join(', ');
 
   if (!updateSet) {
     return {
       sql: [
         `INSERT INTO ${table} (${cols}) VALUES (${placeholders})`,
-        `ON CONFLICT (${conflictCol}) DO NOTHING`,
+        `ON CONFLICT (${quotedConflictCol}) DO NOTHING`,
         'RETURNING *',
       ].join(' '),
       params,
@@ -53,7 +59,7 @@ export function buildUpsert(
   return {
     sql: [
       `INSERT INTO ${table} (${cols}) VALUES (${placeholders})`,
-      `ON CONFLICT (${conflictCol}) DO UPDATE SET ${updateSet}`,
+      `ON CONFLICT (${quotedConflictCol}) DO UPDATE SET ${updateSet}`,
       'RETURNING *',
     ].join(' '),
     params,

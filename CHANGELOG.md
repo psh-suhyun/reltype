@@ -6,6 +6,40 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.1.6] — 2026-03-19
+
+### Security — SQL Injection 전면 차단
+
+이번 릴리즈에서는 SQL Injection 취약점을 방어하기 위한 `sqlGuard` 유틸리티를 도입하고,
+모든 SQL 식별자(컬럼명, 테이블명, 집계 함수 등)에 대한 검증·이스케이프를 적용했습니다.
+
+#### 신규 파일
+
+- **`src/utils/sqlGuard.ts`** — SQL 보안 유틸리티 신규 추가
+  - `quoteIdentifier(raw)` — 식별자 패턴 검증 후 PostgreSQL 표준 이중 따옴표 이스케이프 (`"` → `""`)
+  - `escapeSchemaIdentifier(name)` — 스키마·테이블 정의 시 `"` 이스케이프 (패턴 검증 없음, 개발자 제어 값)
+  - `validateOrderDir(dir)` — ORDER BY 방향 화이트리스트 (ASC/DESC)
+  - `validateAggregateFn(fn)` — 집계 함수 화이트리스트 (COUNT/SUM/AVG/MIN/MAX)
+  - `validateJoinType(type)` — JOIN 타입 화이트리스트 (INNER/LEFT/RIGHT/FULL)
+  - 유효하지 않은 값 감지 시 `logger.error` 로 기록 후 안전한 기본값 반환 (no-throw 정책 준수)
+
+#### 수정 파일
+
+| 파일 | 수정 내용 |
+|---|---|
+| `src/features/schema/table.ts` | `escapeSchemaIdentifier` 적용 — 식별자 내 `"` 이중 이스케이프 |
+| `src/features/query/where.ts` | 컬럼명에 `quoteIdentifier` 적용 |
+| `src/features/query/insert.ts` | INSERT 컬럼명에 `quoteIdentifier` 적용 |
+| `src/features/query/update.ts` | SET 절 컬럼명에 `quoteIdentifier` 적용 |
+| `src/features/query/upsert.ts` | INSERT 컬럼명·`conflictCol`에 `quoteIdentifier` 적용, `EXCLUDED."col"` 이스케이프 |
+| `src/features/query/bulkInsert.ts` | INSERT 컬럼명에 `quoteIdentifier` 적용 |
+| `src/features/query/select.ts` | ORDER BY 컬럼 `quoteIdentifier`, 방향 `validateOrderDir` 적용 |
+| `src/features/query/builder.ts` | `renderCond`·`buildJoinSQL`·`buildGroupBySQL`·`buildOrderBySQL`·`calculate` 전체에 가드 적용, `cursorColumn` 사전 검증 추가 |
+| `src/index.ts` | `sqlGuard` 유틸리티 공개 export 추가 |
+| `src/utils/index.ts` | `sqlGuard` re-export 추가 |
+
+---
+
 ## [0.1.5] — 2026-03-19
 
 ### Changed

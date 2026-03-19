@@ -65,3 +65,12 @@ export { PostgresConfig, NodeEnvSource, readEnv } from './utils/reader';
 // ── Logger ───────────────────────────────────────────────────────────────────
 export { Logger }            from './utils/logger';
 export type { LogLevel, LogFormat, LoggerConfig } from './utils/logger';
+
+// ── SQL Guard (SQL Injection 방어 유틸리티) ───────────────────────────────────
+export {
+  quoteIdentifier,
+  escapeSchemaIdentifier,
+  validateOrderDir,
+  validateAggregateFn,
+  validateJoinType,
+} from './utils/sqlGuard';

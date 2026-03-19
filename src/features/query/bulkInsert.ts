@@ -1,4 +1,5 @@
 import { toSnake } from '../transform/case';
+import { quoteIdentifier } from '../../utils/sqlGuard';
 import { BuiltQuery } from './interfaces/Query';
 import { Logger } from '../../utils/logger';
 
@@ -9,6 +10,7 @@ const logger = Logger.fromEnv(
 
 /**
  * 여러 row를 한 번의 INSERT 쿼리로 삽입합니다.
+ * 모든 컬럼명은 `quoteIdentifier`로 검증 및 이스케이프됩니다.
  *
  * @param table - 테이블명
  * @param rows  - 삽입할 데이터 배열 (camelCase key)
@@ -33,7 +35,7 @@ export function buildBulkInsert(
     return { sql: '', params: [] };
   }
 
-  const cols   = keys.map(toSnake).join(', ');
+  const cols   = keys.map((k) => quoteIdentifier(toSnake(k))).join(', ');
   const params: unknown[] = [];
 
   const valueSets = rows.map((row) => {

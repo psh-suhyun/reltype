@@ -4,6 +4,12 @@ import { toSnake } from '../transform/case';
 import { Logger } from '../../utils/logger';
 import { DbError } from '../../utils/dbError';
 import {
+  quoteIdentifier,
+  validateAggregateFn,
+  validateJoinType,
+  validateOrderDir,
+} from '../../utils/sqlGuard';
+import {
   AdvancedWhere,
   WhereVal,
   JoinClause,
@@ -56,21 +62,23 @@ function parseWhere<T extends Record<string, unknown>>(
 }
 
 function renderCond(c: RawCond, params: unknown[]): string {
+  const col = quoteIdentifier(c.col);
+
   switch (c.op) {
     case 'IS NULL':
     case 'IS NOT NULL':
-      return `${c.col} ${c.op}`;
+      return `${col} ${c.op}`;
 
     case 'IN':
     case 'NOT IN': {
       const arr = Array.isArray(c.val) ? c.val : [c.val];
       const phs = arr.map((v) => { params.push(v); return `$${params.length}`; });
-      return `${c.col} ${c.op} (${phs.join(', ')})`;
+      return `${col} ${c.op} (${phs.join(', ')})`;
     }
 
     default:
       params.push(c.val);
-      return `${c.col} ${c.op} $${params.length}`;
+      return `${col} ${c.op} $${params.length}`;
   }
 }
 
@@ -159,7 +167,7 @@ export class QueryBuilder<T extends Record<string, unknown>> {
   orderBy(clauses: OrderByClause<T>[]): this {
     this._orderByClauses = clauses.map(({ column, direction }) => ({
       col: toSnake(String(column)),
-      dir: direction ?? 'ASC',
+      dir: validateOrderDir(direction ?? 'ASC'),
     }));
     return this;
   }
@@ -184,13 +192,16 @@ export class QueryBuilder<T extends Record<string, unknown>> {
   }
 
   /**
-   * JOIN 추가 (여러 번 호출 가능)
+   * JOIN 추가 (여러 번 호출 가능).
+   * `table`은 `quoteIdentifier`로 자동 검증됩니다.
+   * `type`(INNER/LEFT/RIGHT/FULL)은 화이트리스트로 검증됩니다.
    *
    * @example
    * .join({ table: 'orders', on: 'users.id = orders.user_id', type: 'LEFT' })
    *
-   * @security `on` 절은 애플리케이션 코드에서 정적으로 구성해야 합니다.
-   *           사용자 입력을 직접 전달하면 SQL Injection 위험이 있습니다.
+   * @security `on` 절(JOIN 조건)은 반드시 애플리케이션 코드에서 정적으로 구성해야 합니다.
+   *           사용자 입력을 `on` 에 직접 전달하면 SQL Injection 위험이 있습니다.
+   *           `table`, `type` 은 내부적으로 검증됩니다.
    */
   join(j: JoinClause): this {
     this._joins.push(j);
@@ -199,7 +210,14 @@ export class QueryBuilder<T extends Record<string, unknown>> {
 
   /**
    * SELECT 할 컬럼 지정 (기본값: *)
+   *
+   * 단순 컬럼명 및 `table.column` 표기법을 사용하세요.
+   * 집계 표현식(`COUNT(orders.id) AS cnt`)도 허용하지만,
+   * **사용자 입력을 직접 전달하면 SQL Injection 위험이 있습니다.**
+   * 복잡한 표현식은 정적으로 구성된 문자열만 전달하세요.
+   *
    * @example .columns(['id', 'email', 'firstName'])
+   * @example .columns(['users.id', 'orders.total'])
    */
   columns(cols: Array<keyof T | string>): this {
     this._cols = cols.map((c) => toSnake(String(c))).join(', ');
@@ -262,15 +280,20 @@ export class QueryBuilder<T extends Record<string, unknown>> {
   async calculate(fns: AggregateCalc[]): Promise<Record<string, unknown>> {
     const { whereSQL, params } = this.buildWhereParts();
     const selects = fns
-      .map(({ fn, column, alias }) => `${fn}(${column ?? '*'}) AS ${alias}`)
+      .map(({ fn, column, alias }) => {
+        const safeFn    = validateAggregateFn(fn);
+        const safeCol   = column ? quoteIdentifier(toSnake(column)) : '*';
+        const safeAlias = quoteIdentifier(alias);
+        return `${safeFn}(${safeCol}) AS ${safeAlias}`;
+      })
       .join(', ');
 
     const sql = [
       `SELECT ${selects}`,
       `FROM ${this._table}`,
-      ...this._joins.map((j) => `${j.type ?? 'INNER'} JOIN ${j.table} ON ${j.on}`),
+      this.buildJoinSQL(),
       whereSQL,
-      this._groupByCols.length > 0 ? `GROUP BY ${this._groupByCols.join(', ')}` : '',
+      this._groupByCols.length > 0 ? `GROUP BY ${this._groupByCols.map(quoteIdentifier).join(', ')}` : '',
     ]
       .filter(Boolean)
       .join(' ');
@@ -386,6 +409,14 @@ export class QueryBuilder<T extends Record<string, unknown>> {
   async cursorPaginate(opts: KeysetPaginateOpts): Promise<KeysetPageResult<T>> {
     const { pageSize, cursor, cursorColumn, direction = 'asc' } = opts;
     const colSnake = toSnake(cursorColumn);
+
+    // cursorColumn 유효성 검증 (내부에서 quoteIdentifier가 렌더 시 재검증함)
+    if (!colSnake || quoteIdentifier(colSnake) === '""') {
+      logger.error(
+        `cursorPaginate [${this._table}]: 유효하지 않은 cursorColumn "${cursorColumn}".`,
+      );
+      return { data: [], nextCursor: null, pageSize, hasNext: false };
+    }
 
     let cursorValue: unknown | undefined;
     if (cursor) {
@@ -637,19 +668,23 @@ export class QueryBuilder<T extends Record<string, unknown>> {
 
   private buildJoinSQL(): string {
     return this._joins
-      .map((j) => `${j.type ?? 'INNER'} JOIN ${j.table} ON ${j.on}`)
+      .map((j) => {
+        const type  = validateJoinType(j.type ?? 'INNER');
+        const table = quoteIdentifier(j.table);
+        return `${type} JOIN ${table} ON ${j.on}`;
+      })
       .join(' ');
   }
 
   private buildGroupBySQL(): string {
     return this._groupByCols.length > 0
-      ? `GROUP BY ${this._groupByCols.join(', ')}`
+      ? `GROUP BY ${this._groupByCols.map(quoteIdentifier).join(', ')}`
       : '';
   }
 
   private buildOrderBySQL(): string {
     return this._orderByClauses.length > 0
-      ? `ORDER BY ${this._orderByClauses.map((o) => `${o.col} ${o.dir}`).join(', ')}`
+      ? `ORDER BY ${this._orderByClauses.map((o) => `${quoteIdentifier(o.col)} ${o.dir}`).join(', ')}`
       : '';
   }
 
