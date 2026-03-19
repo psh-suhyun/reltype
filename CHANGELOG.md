@@ -6,7 +6,87 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.1.0] — 2025-03-19
+## [0.1.5] — 2026-03-19
+
+### Changed
+- `README.md` — 전체 문서 최신 API 기준으로 업데이트
+- `README.ko.md` — 한국어 문서 최신 API 기준으로 업데이트
+- `CHANGELOG.md` — 0.1.1 ~ 0.1.4 릴리즈 내역 소급 작성
+
+---
+
+## [0.1.4] — 2026-03-19
+
+### Changed
+- `package.json` / `package-lock.json` — 버전 범프 (0.1.3 → 0.1.4)
+
+---
+
+## [0.1.3] — 2026-03-19
+
+### Fixed (refactor: type info)
+
+#### Query Guard — 빈 입력 방어 로직 추가
+- `buildInsert` — 삽입할 데이터가 없을 때 `logger.error` 출력 후 no-op 반환
+- `buildUpdate` — 수정 데이터 없음 / WHERE 조건 없음 각각 감지 후 no-op 반환 (전체 업데이트 방지)
+- `buildDelete` — WHERE 조건 없음 감지 후 no-op 반환 (전체 삭제 방지), `RETURNING *` 추가
+- `buildUpsert` — 삽입 데이터 없음 감지 후 no-op 반환, 충돌 컬럼만 있을 경우 `DO NOTHING` 처리
+- `buildBulkInsert` — 빈 배열 및 첫 row 데이터 없음 감지 후 no-op 반환
+
+#### QueryBuilder — 안정성 개선
+- `one()` — `this._limitVal` 직접 변이 제거 → `clone()`으로 원본 불변 처리
+- `paginate()` — `Promise.all` 제거, 같은 클라이언트에서 COUNT → DATA 순차 실행
+- `cursorPaginate()` — 잘못된 cursor 토큰 시 `logger.error` 출력 후 빈 결과 반환 (cursor 값 메시지 노출 제거)
+- `clone()` — `_execHooks` 복사 누락 수정
+
+#### BaseRepo — 일관성 개선
+- `exec()` — 빈 SQL 진입 시 `logger.error` 후 즉시 `[]` 반환 (no-op 계층 추가)
+- `delete()` — 내부 `withClient` 직접 호출 제거, `exec()` 재사용으로 로깅 일관성 확보
+- `selectOne()` — 글로벌 훅(`useHooks`) 자동 적용되도록 수정 (`this.select(where).one()` 위임)
+- `findPkKey()` — primary key 미정의 시 조용한 fallback 대신 `logger.warn` 출력
+
+#### Schema / Column
+- `Col` — `isDefaultNow: boolean` 필드 추가로 `default()` / `defaultNow()` 의미 구분
+- `Col.nullable()` / `notNull()` / `primaryKey()` — `isDefaultNow` 상태 올바르게 전파
+- `toSnake()` — 두문자어(Acronym) 처리 개선 (정규식 2단계 적용)
+  - `URLParam` → `url_param` ✓ / `userID` → `user_id` ✓
+
+#### Connection Pool
+- `PoolStatus` — `isInitialized: boolean` 필드 추가
+- `getPoolStatus()` — pool 미초기화 시 `isHealthy: false` 반환 (이전: `true`)
+- `readPoolStatus()` — `isHealthy` 조건 개선: `!(waitingCount > 0 && idleCount === 0)` (pool 소진 상태만 unhealthy)
+
+#### Package
+- `dotenv` — `dependencies` → `devDependencies` 이동 (라이브러리 소비자 의존성 오염 방지)
+
+---
+
+## [0.1.2] — 2026-03-19
+
+### Changed
+- `package.json` / `package-lock.json` — 버전 범프 (0.1.1 → 0.1.2)
+
+---
+
+## [0.1.1] — 2026-03-19
+
+### Added (feat: add schema selection for database connection)
+- `defineTable` — PostgreSQL 스키마 지원 추가
+  - `defineTable('audit.activity_logs', cols)` — dot 표기법
+  - `defineTable('users', cols, { schema: 'auth' })` — 명시적 옵션
+  - `qualifiedName` 자동 생성 (`"auth"."users"` 형태로 SQL 식별자 인용)
+- `TableOpts` 인터페이스 추가 (`{ schema?: string }`)
+- `TableDef` — `qualifiedName` 필드 추가
+- `src/index.ts` — `TableOpts` re-export 추가
+
+### Changed
+- `package.json` — `pg` → `peerDependencies` 이동, `express` / `nodemon` / `typescript` → `devDependencies` 이동
+- `main`, `types`, `exports`, `files`, `keywords`, `repository`, `engines` 필드 추가로 npm 배포 최적화
+- `scripts` — `typecheck`, `prepublishOnly` 추가
+
+---
+
+## [0.1.0] — 2026-03-19
 
 ### Added
 
@@ -22,7 +102,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - `.exec()` — 쿼리 실행 → `T[]`
 - `.one()` — 단건 실행 → `T | null`
 - `.calculate(fns)` — COUNT / SUM / AVG / MIN / MAX 집계
-- `.paginate(opts)` — OFFSET 기반 페이지네이션 (COUNT + DATA 병렬 실행)
+- `.paginate(opts)` — OFFSET 기반 페이지네이션
 - `.toSQL()` — 생성될 SQL 미리 확인 (디버깅용)
 - `QueryBuilder.raw(sql, params?)` — 독립 Raw SQL 실행
 
@@ -53,7 +133,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.0.1] — Initial Release
+## [0.0.1] — 2026-02-13
 
 ### Added
 - `defineTable` / `col` — 테이블 스키마 정의 및 타입 추론 (`InferRow`, `InferInsert`, `InferUpdate`)
