@@ -1,6 +1,6 @@
 {
   "name": "reltype",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Type-first relational modeling for PostgreSQL in TypeScript. Fluent query builder with automatic camelCase ↔ snake_case conversion, CRUD, streaming, cursor pagination, and hooks.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
