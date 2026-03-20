@@ -20,6 +20,13 @@ export { runInTx }           from './features/connection/tx';
 
 // ── Query builders ───────────────────────────────────────────────────────────
 export { buildSelect }       from './features/query/select';
+export {
+  sqlTableRef,
+  sqlCols,
+  sqlColsAs,
+  joinOnEq,
+  orderCol,
+} from './features/query/joinRefs';
 export { buildInsert }       from './features/query/insert';
 export { buildUpdate }       from './features/query/update';
 export { buildDelete }       from './features/query/delete';

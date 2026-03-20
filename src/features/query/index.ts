@@ -7,3 +7,4 @@ export * from './bulkInsert';
 export * from './where';
 export * from './interfaces';
 export * from './builder';
+export * from './joinRefs';

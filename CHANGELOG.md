@@ -6,6 +6,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.1.8] — 2026-03-19
+
+### Added — JOIN / SELECT 용 `TableDef` 헬퍼
+
+- **`src/features/query/joinRefs.ts`** — 조인·SELECT 컬럼 나열을 짧게 쓰기 위한 유틸리티
+  - `sqlTableRef(def)` — `schema.table` 문자열 (`JOIN` 의 `table` 인자 등)
+  - `joinOnEq(leftDef, leftCol, rightDef, rightCol)` — `ON` 절 (`qualifiedName` + `quoteIdentifier` 기반)
+  - `sqlCols(def, '*')` / `sqlCols(def, ['firstName', ...])` — `테이블.*` 또는 camelCase 키 → `테이블.snake_col`
+  - `sqlColsAs(def, [['id', 'profile_id'], ...])` — `col AS alias_snake`
+  - `orderCol(def, colKey)` — `ORDER BY` 용 한정 컬럼 (`schema.table.column`)
+- `src/features/query/index.ts`, **`src/index.ts`** — 위 심볼 공개 export
+
+---
+
 ## [0.1.7] — 2026-03-19
 
 ### Added — Repository Query Debug
